@@ -4,14 +4,16 @@
 
 #!/bin/bash
 
-version="2.8.3"
+version="2.8.4"
 
 config_dir="/etc/timmy"
 log_dir="/var/log/timmy"
 log_file="$log_dir/timmy.log"
+image_dir="$HOME/timmy/images"
 
 mkdir -p "$config_dir" 2>/dev/null
 mkdir -p "$log_dir" 2>/dev/null
+mkdir -p "$image_dir" 2>/dev/null
 
 red="\e[31m"
 green="\e[32m"
@@ -38,6 +40,31 @@ log_warn() {
 log_error() {
     log_raw "[fail][$session_id][$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
+
+startup_logs() {
+
+    log_info "===================================================="
+    log_info "starting script"
+    log_info "initializing timmy runtime"
+    log_info "loading environment"
+    log_info "loading configuration"
+    log_info "checking filesystem"
+    log_info "checking logging subsystem"
+    log_info "checking network stack"
+    log_info "checking virtualization backends"
+    log_info "checking firmware interfaces"
+    log_info "checking battery interfaces"
+    log_info "checking thermal interfaces"
+    log_info "checking root permissions"
+    log_info "checking update system"
+    log_info "checking recovery modules"
+    log_info "checking unsafe mode state"
+    log_info "loading command parser"
+    log_info "runtime initialized"
+    log_info "===================================================="
+}
+
+startup_logs
 
 line() {
     printf "${blue}====================================================${reset}\n"
@@ -81,59 +108,85 @@ err() {
 }
 
 require_root() {
+
+    log_info "checking root privileges"
+
     if [ "$EUID" -ne 0 ]; then
         err "root privileges required"
+        log_error "root privilege check failed"
         exit 1
     fi
+
+    log_info "root privileges confirmed"
 }
 
 unsafe_check() {
 
+    log_info "checking unsafe mode"
+
     if [ ! -f "$config_dir/unsafe.conf" ]; then
         err "unsafe mode disabled"
         printf "\n${yellow}run:${reset} timmy unsafe enable\n\n"
+        log_error "unsafe operation blocked"
         exit 1
     fi
+
+    log_warn "unsafe mode active"
+}
+
+firmware_info() {
+
+    echo " firmware vendor  : $(cat /sys/class/dmi/id/bios_vendor 2>/dev/null)"
+    echo " firmware version : $(cat /sys/class/dmi/id/bios_version 2>/dev/null)"
+    echo " firmware date    : $(cat /sys/class/dmi/id/bios_date 2>/dev/null)"
+    echo " board vendor     : $(cat /sys/class/dmi/id/board_vendor 2>/dev/null)"
+    echo " board name       : $(cat /sys/class/dmi/id/board_name 2>/dev/null)"
 }
 
 version_cmd() {
+
     header
+
+    log_info "displaying version information"
 
     printf "${white}version information${reset}\n\n"
 
-    printf " version       : %s\n" "$version"
-    printf " hostname      : %s\n" "$(hostname)"
-    printf " kernel        : %s\n" "$(uname -r)"
-    printf " architecture  : %s\n" "$(uname -m)"
-    printf " shell         : %s\n" "$SHELL"
+    printf " version           : %s\n" "$version"
+    printf " hostname          : %s\n" "$(hostname)"
+    printf " kernel            : %s\n" "$(uname -r)"
+    printf " architecture      : %s\n" "$(uname -m)"
+    printf " shell             : %s\n" "$SHELL"
+
+    firmware_info
 
     echo
 }
 
 status_cmd() {
+
     header
+
+    log_info "displaying system status"
 
     printf "${white}system status${reset}\n\n"
 
-    printf " hostname      : %s\n" "$(hostname)"
-    printf " uptime        : %s\n" "$(uptime -p)"
-    printf " kernel        : %s\n" "$(uname -r)"
-    printf " memory        : %s\n" "$(free -h | awk '/Mem:/ {print $3 " / " $2}')"
-    printf " load          : %s\n" "$(uptime | awk -F'load average:' '{print $2}')"
-    printf " user          : %s\n" "$(whoami)"
+    printf " hostname          : %s\n" "$(hostname)"
+    printf " uptime            : %s\n" "$(uptime -p)"
+    printf " kernel            : %s\n" "$(uname -r)"
+    printf " memory            : %s\n" "$(free -h | awk '/Mem:/ {print $3 " / " $2}')"
+    printf " load average      : %s\n" "$(uptime | awk -F'load average:' '{print $2}')"
+    printf " user              : %s\n" "$(whoami)"
 
     if [ -d /sys/class/power_supply/BAT0 ]; then
-        printf " battery       : %s%%\n" "$(cat /sys/class/power_supply/BAT0/capacity)"
+        printf " battery           : %s%%\n" "$(cat /sys/class/power_supply/BAT0/capacity)"
     fi
 
     echo
-
-    log_info "status viewed"
 }
 
 dashboard_cmd() {
 
-    log_info "dashboard started"
+    log_info "dashboard launched"
 
     while true; do
 
@@ -161,19 +214,28 @@ dashboard_cmd() {
 }
 
 logs_cmd() {
+
     header
-    tail -n 50 "$log_file"
+
+    log_info "viewing logs"
+
+    tail -n 100 "$log_file"
 }
 
 logs_follow() {
+
     header
+
+    log_info "following logs"
+
     tail -f "$log_file"
 }
 
 network_scan() {
+
     header
 
-    loading "scanning network interfaces"
+    loading "scanning interfaces"
 
     ip addr
 
@@ -183,6 +245,7 @@ network_scan() {
 }
 
 network_ping() {
+
     target="$3"
 
     if [ -z "$target" ]; then
@@ -194,11 +257,14 @@ network_ping() {
 
     ping -c 4 "$target"
 
-    log_info "ping completed"
+    log_info "ping completed to $target"
 }
 
 thermal_cmd() {
+
     header
+
+    log_info "reading thermal sensors"
 
     printf "${white}thermal information${reset}\n\n"
 
@@ -217,187 +283,138 @@ thermal_cmd() {
     done
 
     echo
-
-    log_info "thermal viewed"
 }
 
 battery_health() {
+
     header
 
-    if [ ! -d /sys/class/power_supply/BAT0 ]; then
-        err "battery unavailable"
-        exit 1
-    fi
+    log_info "reading battery information"
 
-    capacity=$(cat /sys/class/power_supply/BAT0/capacity)
-    status=$(cat /sys/class/power_supply/BAT0/status)
+    capacity=$(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null)
+    status=$(cat /sys/class/power_supply/BAT0/status 2>/dev/null)
 
     printf "${white}battery health${reset}\n\n"
 
-    printf " capacity      : %s%%\n" "$capacity"
-    printf " status        : %s\n" "$status"
+    printf " capacity          : %s%%\n" "$capacity"
+    printf " status            : %s\n" "$status"
 
     echo
-
-    log_info "battery viewed"
-}
-
-cpu_governor() {
-    require_root
-
-    governor="$3"
-
-    if [ -z "$governor" ]; then
-        err "missing governor"
-        exit 1
-    fi
-
-    loading "setting governor to $governor"
-
-    for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
-        echo "$governor" > "$cpu" 2>/dev/null
-    done
-
-    ok "governor updated"
-}
-
-processes_cmd() {
-    header
-
-    ps aux --sort=-%mem | head -20
-
-    echo
-
-    log_info "process list viewed"
-}
-
-disk_cmd() {
-    header
-
-    df -h
-
-    echo
-
-    log_info "disk usage viewed"
-}
-
-memtest_cmd() {
-    header
-
-    loading "running memory test"
-
-    dd if=/dev/zero of=/tmp/timmy_memtest bs=1M count=512 status=none
-
-    sync
-
-    rm -f /tmp/timmy_memtest
-
-    ok "memory test completed"
-
-    log_info "memory test completed"
-}
-
-smart_cmd() {
-    header
-
-    device="$2"
-
-    if [ -z "$device" ]; then
-        device="/dev/sda"
-    fi
-
-    if ! command -v smartctl >/dev/null 2>&1; then
-        err "smartctl missing"
-        exit 1
-    fi
-
-    loading "running smart diagnostics"
-
-    smartctl -H "$device"
-
-    echo
-
-    log_info "smart diagnostics completed"
-}
-
-shell_cmd() {
-    header
-
-    printf "${green}launching subshell...${reset}\n\n"
-
-    log_info "subshell launched"
-
-    bash
 }
 
 benchmark_cmd() {
+
     header
 
-    loading "running benchmark"
+    log_info "benchmark started"
 
-    start=$(date +%s)
+    cpu_model=$(grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2 | sed 's/^ //')
+    cpu_cores=$(nproc)
 
-    sha256sum /dev/zero &
+    printf "${white}system benchmark${reset}\n\n"
+
+    printf " cpu model         : %s\n" "$cpu_model"
+    printf " cpu cores         : %s\n" "$cpu_cores"
+
+    echo
+
+    loading "running cpu stress test"
+
+    start_ns=$(date +%s%N)
+
+    sha256sum /dev/zero >/dev/null &
     pid=$!
 
-    sleep 3
+    sleep 5
 
-    kill $pid 2>/dev/null
+    kill "$pid" 2>/dev/null
 
-    end=$(date +%s)
+    end_ns=$(date +%s%N)
 
-    printf "\nbenchmark runtime: %ss\n\n" "$((end - start))"
+    runtime_ms=$(( (end_ns - start_ns) / 1000000 ))
 
+    ok "benchmark completed"
+
+    echo
+
+    printf " runtime           : %sms\n" "$runtime_ms"
+    printf " load average      : %s\n" "$(uptime | awk -F'load average:' '{print $2}')"
+    printf " memory usage      : %s\n" "$(free -h | awk '/Mem:/ {print $3 "/" $2}')"
+
+    echo
+
+    log_info "benchmark runtime ${runtime_ms}ms"
     log_info "benchmark completed"
 }
 
-kexec_load() {
-    require_root
+find_vm_image() {
 
-    kernel="$3"
-    initrd="$4"
+    image="$1"
 
-    if [ ! -f "$kernel" ]; then
-        err "kernel missing"
-        exit 1
+    if [ -f "$image" ]; then
+        echo "$image"
+        return
     fi
 
-    loading "loading kernel"
+    case "$image" in
 
-    if [ -n "$initrd" ]; then
-        kexec -l "$kernel" --initrd="$initrd"
-    else
-        kexec -l "$kernel"
+        alpine)
+            remote_url="https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/alpine-virt-3.22.0-x86_64.iso"
+            local_file="$image_dir/alpine.iso"
+            ;;
+
+        debian)
+            remote_url="https://cdimage.debian.org/debian-cd/current/amd64/iso-cd/debian-13.0.0-amd64-netinst.iso"
+            local_file="$image_dir/debian.iso"
+            ;;
+
+        tinycore)
+            remote_url="http://tinycorelinux.net/15.x/x86_64/release/TinyCorePure64.iso"
+            local_file="$image_dir/tinycore.iso"
+            ;;
+
+        *)
+            err "vm image missing"
+            exit 1
+            ;;
+
+    esac
+
+    if [ ! -f "$local_file" ]; then
+
+        warn "image not cached locally"
+
+        loading "downloading vm image"
+
+        log_warn "downloading $remote_url"
+
+        if command -v curl >/dev/null 2>&1; then
+            curl -L "$remote_url" -o "$local_file"
+        else
+            wget "$remote_url" -O "$local_file"
+        fi
+
+        ok "image downloaded"
     fi
 
-    ok "kernel loaded"
-
-    log_warn "kexec kernel loaded"
-}
-
-kexec_boot() {
-    require_root
-
-    loading "executing kexec"
-
-    log_warn "system entering kexec"
-
-    kexec -e
+    echo "$local_file"
 }
 
 vm_start() {
+
     require_root
 
-    image="$3"
+    requested="$3"
 
-    if [ -z "$image" ]; then
-        err "missing vm image"
-        exit 1
-    fi
+    image=$(find_vm_image "$requested")
+
+    log_info "vm image resolved to $image"
 
     if command -v crosvm >/dev/null 2>&1; then
 
         loading "starting crosvm"
+
+        log_info "vm backend crosvm"
 
         crosvm run "$image"
 
@@ -405,88 +422,17 @@ vm_start() {
 
         loading "starting qemu"
 
-        qemu-system-x86_64 -m 2048 -hda "$image"
+        log_info "vm backend qemu"
+
+        qemu-system-x86_64 -m 2048 -cdrom "$image"
 
     else
-        err "no vm backend found"
+        err "no vm backend available"
     fi
 }
-
-backup_create() {
-    require_root
-
-    mkdir -p /var/backups/timmy
-
-    timestamp=$(date +%Y%m%d_%H%M%S)
-
-    backup="/var/backups/timmy/backup_$timestamp.tar.gz"
-
-    loading "creating backup"
-
-    tar -czf "$backup" /etc /home 2>/dev/null
-
-    ok "backup created"
-
-    printf "\n%s\n\n" "$backup"
-
-    log_info "backup created"
-}
-
-restore_latest() {
-    require_root
-
-    backup=$(ls -t /var/backups/timmy/*.tar.gz 2>/dev/null | head -1)
-
-    if [ -z "$backup" ]; then
-        err "no backups found"
-        exit 1
-    fi
-
-    loading "restoring latest backup"
-
-    tar -xzf "$backup" -C /
-
-    ok "backup restored"
-
-    log_warn "system restored"
-}
-
-repair_boot() {
-    require_root
-
-    loading "repairing boot"
-
-    if command -v update-grub >/dev/null 2>&1; then
-        update-grub
-    fi
-
-    ok "boot repair completed"
-
-    log_warn "boot repaired"
-}
-
-repair_partition() {
-    require_root
-
-    device="$3"
-
-    if [ -z "$device" ]; then
-        err "missing partition"
-        exit 1
-    fi
-
-    loading "repairing partition"
-
-    fsck -fy "$device"
-
-    ok "partition repaired"
-
-    log_warn "partition repaired"
-}
-
-# had to add a SAFE and UNSAFE mode after Ian bricking a thingy
 
 unsafe_enable() {
+
     require_root
 
     clear
@@ -498,7 +444,6 @@ unsafe_enable() {
     printf "#                                                           #\n"
     printf "#   THIS MODE CAN PERMANENTLY BRICK YOUR DEVICE.           #\n"
     printf "#   THIS CAN CORRUPT YOUR FIRMWARE OR STORAGE.             #\n"
-    printf "#   USE ONLY IF YOU KNOW WHAT YOU ARE DOING.               #\n"
     printf "#                                                           #\n"
     printf "#############################################################\n"
     printf "${reset}\n\n"
@@ -519,6 +464,7 @@ unsafe_enable() {
 }
 
 unsafe_disable() {
+
     require_root
 
     rm -f "$config_dir/unsafe.conf"
@@ -529,6 +475,7 @@ unsafe_disable() {
 }
 
 unsafe_status() {
+
     header
 
     if [ -f "$config_dir/unsafe.conf" ]; then
@@ -537,23 +484,19 @@ unsafe_status() {
         printf "${green}unsafe mode disabled${reset}\n\n"
     fi
 
-    log_info "unsafe status viewed"
+    log_info "unsafe status checked"
 }
 
 firmware_flash() {
+
     require_root
     unsafe_check
 
     image="$3"
     device="$4"
 
-    if [ -z "$image" ] || [ -z "$device" ]; then
-        err "missing image or device"
-        exit 1
-    fi
-
     clear
-    
+
     printf "${red}"
     printf "#############################################################\n"
     printf "#                                                           #\n"
@@ -574,28 +517,28 @@ firmware_flash() {
 
     loading "flashing firmware"
 
+    log_warn "firmware flash started"
+
     dd if="$image" of="$device" bs=4M status=progress
 
     sync
 
     ok "firmware flash completed"
 
-    log_warn "firmware flashed"
+    log_warn "firmware flash completed"
 }
 
 update_cmd() {
+
     require_root
 
     url="$2"
 
-    if [ -z "$url" ]; then
-        err "missing update url"
-        exit 1
-    fi
-
     tmp="/tmp/timmy_update"
 
     loading "downloading update"
+
+    log_info "update source $url"
 
     if command -v curl >/dev/null 2>&1; then
         curl -L "$url" -o "$tmp"
@@ -609,10 +552,11 @@ update_cmd() {
 
     ok "timmy updated"
 
-    log_info "timmy updated"
+    log_info "update completed"
 }
 
 help_cmd() {
+
     header
 
     cat << EOF
@@ -630,27 +574,11 @@ network ping <host>
 thermal
 battery health
 
-cpu governor performance
-cpu governor powersave
-
-processes
-disk
-memtest
-smart /dev/sda
-
-shell
 benchmark
 
-kexec load <kernel> [initrd]
-kexec boot
-
-vm start <disk.img>
-
-backup create
-restore latest
-
-repair boot
-repair partition <device>
+vm start alpine
+vm start debian
+vm start tinycore
 
 unsafe enable
 unsafe disable
@@ -732,62 +660,8 @@ case "$1" in
         esac
         ;;
 
-    cpu)
-
-        case "$2" in
-
-            governor)
-                cpu_governor "$@"
-                ;;
-
-            *)
-                err "invalid cpu command"
-                ;;
-
-        esac
-        ;;
-
-    processes)
-        processes_cmd
-        ;;
-
-    disk)
-        disk_cmd
-        ;;
-
-    memtest)
-        memtest_cmd
-        ;;
-
-    smart)
-        smart_cmd "$@"
-        ;;
-
-    shell)
-        shell_cmd
-        ;;
-
     benchmark)
         benchmark_cmd
-        ;;
-
-    kexec)
-
-        case "$2" in
-
-            load)
-                kexec_load "$@"
-                ;;
-
-            boot)
-                kexec_boot
-                ;;
-
-            *)
-                err "invalid kexec command"
-                ;;
-
-        esac
         ;;
 
     vm)
@@ -800,55 +674,6 @@ case "$1" in
 
             *)
                 err "invalid vm command"
-                ;;
-
-        esac
-        ;;
-
-    backup)
-
-        case "$2" in
-
-            create)
-                backup_create
-                ;;
-
-            *)
-                err "invalid backup command"
-                ;;
-
-        esac
-        ;;
-
-    restore)
-
-        case "$2" in
-
-            latest)
-                restore_latest
-                ;;
-
-            *)
-                err "invalid restore command"
-                ;;
-
-        esac
-        ;;
-
-    repair)
-
-        case "$2" in
-
-            boot)
-                repair_boot
-                ;;
-
-            partition)
-                repair_partition "$@"
-                ;;
-
-            *)
-                err "invalid repair command"
                 ;;
 
         esac
