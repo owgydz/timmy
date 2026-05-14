@@ -1,0 +1,7 @@
+theme_name=matrix
+
+primary=green
+secondary=green
+success=green
+warning=yellow
+danger=red

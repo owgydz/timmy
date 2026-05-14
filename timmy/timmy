@@ -1,0 +1,321 @@
+#!/bin/bash
+
+base_dir="$(cd "$(dirname "$0")" && pwd)"
+
+#
+# core runtime
+#
+
+source "$base_dir/core/config.sh"
+source "$base_dir/core/logging.sh"
+source "$base_dir/core/history.sh"
+source "$base_dir/core/ui.sh"
+source "$base_dir/core/runtime.sh"
+source "$base_dir/core/boot.sh"
+
+#
+# command modules
+#
+
+source "$base_dir/commands/version.sh"
+source "$base_dir/commands/status.sh"
+source "$base_dir/commands/help.sh"
+source "$base_dir/commands/dashboard.sh"
+source "$base_dir/commands/network.sh"
+source "$base_dir/commands/thermal.sh"
+source "$base_dir/commands/benchmark.sh"
+source "$base_dir/commands/monitor.sh"
+source "$base_dir/commands/chromeos.sh"
+source "$base_dir/commands/unsafe.sh"
+source "$base_dir/commands/update.sh"
+source "$base_dir/commands/vm.sh"
+source "$base_dir/commands/recovery.sh"
+
+#
+# firmware subsystem
+#
+
+source "$base_dir/firmware/info.sh"
+source "$base_dir/firmware/backup.sh"
+source "$base_dir/firmware/flash.sh"
+
+#
+# recovery subsystem
+#
+
+source "$base_dir/reco/scan.sh"
+source "$base_dir/reco/repair.sh"
+source "$base_dir/reco/rebuild.sh"
+
+#
+# vm subsystem
+#
+
+source "$base_dir/vm/create.sh"
+source "$base_dir/vm/launch.sh"
+source "$base_dir/vm/manager.sh"
+source "$base_dir/vm/snapshots.sh"
+
+#
+# monitor subsystem
+#
+
+source "$base_dir/monitor/cpu.sh"
+source "$base_dir/monitor/memory.sh"
+source "$base_dir/monitor/disk.sh"
+source "$base_dir/monitor/network.sh"
+source "$base_dir/monitor/thermal.sh"
+
+#
+# theme initialization
+#
+
+theme_file="$base_dir/themes/$theme.theme"
+
+if [ -f "$theme_file" ]; then
+
+    source "$theme_file"
+
+    log_info "theme loaded: $theme"
+
+else
+
+    log_warn "theme missing: $theme"
+fi
+
+#
+# runtime startup
+#
+
+record_history "$@"
+
+startup_logs
+
+#
+# banner
+#
+
+show_banner() {
+
+    if [ -f "$base_dir/assets/banner.txt" ]; then
+
+        cat "$base_dir/assets/banner.txt"
+
+        echo
+    fi
+}
+
+show_banner
+
+#
+# command runtime
+#
+
+case "$1" in
+
+    version)
+
+        version_cmd
+        ;;
+
+    status)
+
+        status_cmd
+        ;;
+
+    dashboard)
+
+        dashboard_cmd
+        ;;
+
+    monitor)
+
+        monitor_cmd
+        ;;
+
+    logs)
+
+        case "$2" in
+
+            follow)
+
+                tail -f "$log_file"
+                ;;
+
+            errors)
+
+                grep "\[fail\]" "$log_file"
+                ;;
+
+            sessions)
+
+                ls -1 "$log_dir"/session_*.log 2>/dev/null
+                ;;
+
+            *)
+
+                tail -n 100 "$log_file"
+                ;;
+
+        esac
+        ;;
+
+    history)
+
+        show_history
+        ;;
+
+    network)
+
+        case "$2" in
+
+            scan)
+
+                network_scan
+                ;;
+
+            ping)
+
+                network_ping "$3"
+                ;;
+
+            *)
+
+                ui_fail "invalid network command"
+                ;;
+
+        esac
+        ;;
+
+    thermal)
+
+        thermal_cmd
+        ;;
+
+    benchmark)
+
+        benchmark_cmd
+        ;;
+
+    boot)
+
+        case "$2" in
+
+            menu)
+
+                boot_menu
+                ;;
+
+            *)
+
+                ui_fail "invalid boot command"
+                ;;
+
+        esac
+        ;;
+
+    vm)
+
+        vm_cmd "$2" "$3" "$4"
+        ;;
+
+    chromeos)
+
+        case "$2" in
+
+            status)
+
+                chromeos_status
+                ;;
+
+            *)
+
+                ui_fail "invalid chromeos command"
+                ;;
+
+        esac
+        ;;
+
+    firmware)
+
+        case "$2" in
+
+            info)
+
+                firmware_info
+                ;;
+
+            backup)
+
+                firmware_backup
+                ;;
+
+            flash)
+
+                firmware_flash "$3"
+                ;;
+
+            *)
+
+                ui_fail "invalid firmware command"
+                ;;
+
+        esac
+        ;;
+
+    recovery)
+
+        recovery_cmd "$2"
+        ;;
+
+    unsafe)
+
+        case "$2" in
+
+            enable)
+
+                unsafe_enable
+                ;;
+
+            disable)
+
+                unsafe_disable
+                ;;
+
+            status)
+
+                unsafe_status
+                ;;
+
+            *)
+
+                ui_fail "invalid unsafe command"
+                ;;
+
+        esac
+        ;;
+
+    update)
+
+        update_cmd "$2"
+        ;;
+
+    help|"")
+
+        help_cmd
+        ;;
+
+    *)
+
+        ui_header
+
+        ui_fail "unknown command"
+
+        echo
+
+        help_cmd
+        ;;
+
+esac
+
+log_info "command execution completed"

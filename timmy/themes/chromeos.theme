@@ -1,0 +1,7 @@
+theme_name=chromeos
+
+primary=cyan
+secondary=blue
+success=green
+warning=yellow
+danger=red

@@ -1,0 +1,7 @@
+theme_name=midnight
+
+primary=blue
+secondary=cyan
+success=green
+warning=yellow
+danger=red

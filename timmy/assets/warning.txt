@@ -1,0 +1,10 @@
+#############################################################
+#                                                           #
+#                          warning                          #
+#                                                           #
+#   THIS OPERATION MAY DAMAGE YOUR DEVICE, STORAGE,         #
+#   FIRMWARE, OR OPERATING SYSTEM.                          #
+#                                                           #
+#   CONTINUE ONLY IF YOU UNDERSTAND THE RISKS.              #
+#                                                           #
+#############################################################
