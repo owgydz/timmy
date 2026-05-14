@@ -2,7 +2,7 @@
 
 set -e
 
-repo_url="https://raw.githubusercontent.com/owgydz/timmy/main"
+repo_url="https://raw.githubusercontent.com/owgydz/timmy/"
 install_dir="/usr/local/timmy"
 bin_dir="/usr/local/bin"
 
