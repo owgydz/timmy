@@ -3,7 +3,7 @@
 set -e
 
 repo_url="https://raw.githubusercontent.com/owgydz/timmy/main"
-install_dir="/opt/timmy"
+install_dir="/usr/local/timmy"
 bin_dir="/usr/local/bin"
 
 echo "[timmy] starting installer"
