@@ -4,16 +4,22 @@
 
 #!/bin/bash
 
-version="2.8.4"
+version="2.8.5"
 
 config_dir="/etc/timmy"
 log_dir="/var/log/timmy"
 log_file="$log_dir/timmy.log"
 image_dir="$HOME/timmy/images"
+history_file="$HOME/.timmy_history"
 
 mkdir -p "$config_dir" 2>/dev/null
 mkdir -p "$log_dir" 2>/dev/null
 mkdir -p "$image_dir" 2>/dev/null
+
+boot_session=$(date +%Y%m%d_%H%M%S)
+session_log="$log_dir/session_$boot_session.log"
+
+error_count=0
 
 red="\e[31m"
 green="\e[32m"
@@ -23,43 +29,53 @@ cyan="\e[36m"
 white="\e[97m"
 reset="\e[0m"
 
-session_id=$(date +%s)
+record_history() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') | $*" >> "$history_file"
+}
 
-log_raw() {
-    echo "$1" >> "$log_file"
+record_history "$@"
+
+log_system() {
+
+    subsystem="$1"
+    message="$2"
+
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+    echo "[$timestamp][$subsystem] $message" >> "$log_file"
+    echo "[$timestamp][$subsystem] $message" >> "$session_log"
 }
 
 log_info() {
-    log_raw "[info][$session_id][$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    log_system "info" "$1"
 }
 
 log_warn() {
-    log_raw "[warn][$session_id][$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    log_system "warn" "$1"
 }
 
 log_error() {
-    log_raw "[fail][$session_id][$(date '+%Y-%m-%d %H:%M:%S')] $1"
+    error_count=$((error_count + 1))
+    log_system "fail" "$1"
 }
 
 startup_logs() {
 
     log_info "===================================================="
     log_info "starting script"
-    log_info "initializing timmy runtime"
-    log_info "loading environment"
+    log_info "starting boot session $boot_session"
+    log_info "loading runtime"
     log_info "loading configuration"
+    log_info "loading logging engine"
     log_info "checking filesystem"
-    log_info "checking logging subsystem"
     log_info "checking network stack"
-    log_info "checking virtualization backends"
-    log_info "checking firmware interfaces"
-    log_info "checking battery interfaces"
-    log_info "checking thermal interfaces"
-    log_info "checking root permissions"
-    log_info "checking update system"
-    log_info "checking recovery modules"
-    log_info "checking unsafe mode state"
-    log_info "loading command parser"
+    log_info "checking virtualization subsystem"
+    log_info "checking firmware subsystem"
+    log_info "checking thermal subsystem"
+    log_info "checking benchmark subsystem"
+    log_info "checking recovery subsystem"
+    log_info "checking update subsystem"
+    log_info "checking command parser"
     log_info "runtime initialized"
     log_info "===================================================="
 }
@@ -78,7 +94,8 @@ header() {
 }
 
 loading() {
-    msg=$1
+
+    msg="$1"
 
     printf "${yellow}[timmy]${reset} %s" "$msg"
 
@@ -113,7 +130,6 @@ require_root() {
 
     if [ "$EUID" -ne 0 ]; then
         err "root privileges required"
-        log_error "root privilege check failed"
         exit 1
     fi
 
@@ -122,12 +138,9 @@ require_root() {
 
 unsafe_check() {
 
-    log_info "checking unsafe mode"
-
     if [ ! -f "$config_dir/unsafe.conf" ]; then
         err "unsafe mode disabled"
         printf "\n${yellow}run:${reset} timmy unsafe enable\n\n"
-        log_error "unsafe operation blocked"
         exit 1
     fi
 
@@ -166,7 +179,7 @@ status_cmd() {
 
     header
 
-    log_info "displaying system status"
+    log_info "displaying status"
 
     printf "${white}system status${reset}\n\n"
 
@@ -207,28 +220,140 @@ dashboard_cmd() {
             printf " battery    : %s%%\n" "$(cat /sys/class/power_supply/BAT0/capacity)"
         fi
 
+        echo
+        printf " errors     : %s\n" "$error_count"
         printf "\npress ctrl+c to exit\n"
 
         sleep 2
     done
 }
 
-logs_cmd() {
+monitor_cmd() {
 
-    header
+    log_info "monitor launched"
 
-    log_info "viewing logs"
+    while true; do
 
-    tail -n 100 "$log_file"
+        clear
+
+        cpu_usage=$(top -bn1 | awk '/Cpu/ {print 100 - $8}')
+        ram_usage=$(free -h | awk '/Mem:/ {print $3 "/" $2}')
+        disk_usage=$(df -h / | awk 'NR==2 {print $3 "/" $2}')
+
+        printf "${cyan}"
+        printf "╔════════════════════════════════════╗\n"
+        printf "║          timmy monitor            ║\n"
+        printf "╠════════════════════════════════════╣\n"
+        printf "${reset}"
+
+        printf " cpu usage     : %.1f%%\n" "$cpu_usage"
+        printf " ram usage     : %s\n" "$ram_usage"
+        printf " disk usage    : %s\n" "$disk_usage"
+
+        if [ -d /sys/class/power_supply/BAT0 ]; then
+            printf " battery       : %s%%\n" "$(cat /sys/class/power_supply/BAT0/capacity)"
+        fi
+
+        echo
+
+        for zone in /sys/class/thermal/thermal_zone*; do
+
+            if [ -f "$zone/temp" ]; then
+
+                name=$(cat "$zone/type" 2>/dev/null)
+                temp=$(cat "$zone/temp")
+                celsius=$((temp / 1000))
+
+                printf " %-12s : %s°c\n" "$name" "$celsius"
+
+            fi
+
+        done
+
+        echo
+        printf " errors logged : %s\n" "$error_count"
+
+        sleep 2
+    done
 }
 
-logs_follow() {
+benchmark_cmd() {
 
     header
 
-    log_info "following logs"
+    log_info "advanced benchmark started"
 
-    tail -f "$log_file"
+    cpu_model=$(grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2 | sed 's/^ //')
+
+    printf "${white}advanced benchmark${reset}\n\n"
+
+    printf " cpu model         : %s\n" "$cpu_model"
+    printf " cpu cores         : %s\n" "$(nproc)"
+
+    echo
+
+    loading "running cpu benchmark"
+
+    cpu_start=$(date +%s%N)
+
+    sha256sum /dev/zero >/dev/null &
+    cpu_pid=$!
+
+    sleep 6
+
+    kill "$cpu_pid" 2>/dev/null
+
+    cpu_end=$(date +%s%N)
+
+    cpu_runtime=$(( (cpu_end - cpu_start) / 1000000 ))
+
+    ok "cpu benchmark completed"
+
+    echo
+
+    loading "running memory benchmark"
+
+    mem_start=$(date +%s%N)
+
+    dd if=/dev/zero of=/tmp/timmy_memtest bs=1M count=1024 status=none
+
+    sync
+
+    mem_end=$(date +%s%N)
+
+    mem_runtime=$(( (mem_end - mem_start) / 1000000 ))
+
+    rm -f /tmp/timmy_memtest
+
+    ok "memory benchmark completed"
+
+    echo
+
+    loading "running disk benchmark"
+
+    disk_start=$(date +%s%N)
+
+    dd if=/dev/zero of=/tmp/timmy_disk_test bs=8M count=128 conv=fdatasync status=none
+
+    disk_end=$(date +%s%N)
+
+    disk_runtime=$(( (disk_end - disk_start) / 1000000 ))
+
+    rm -f /tmp/timmy_disk_test
+
+    ok "disk benchmark completed"
+
+    echo
+
+    printf "${cyan}benchmark results${reset}\n\n"
+
+    printf " cpu runtime       : %sms\n" "$cpu_runtime"
+    printf " memory runtime    : %sms\n" "$mem_runtime"
+    printf " disk runtime      : %sms\n" "$disk_runtime"
+
+    echo
+
+    log_info "benchmark completed"
 }
 
 network_scan() {
@@ -240,8 +365,6 @@ network_scan() {
     ip addr
 
     echo
-
-    log_info "network scan completed"
 }
 
 network_ping() {
@@ -257,14 +380,12 @@ network_ping() {
 
     ping -c 4 "$target"
 
-    log_info "ping completed to $target"
+    log_info "ping completed"
 }
 
 thermal_cmd() {
 
     header
-
-    log_info "reading thermal sensors"
 
     printf "${white}thermal information${reset}\n\n"
 
@@ -289,8 +410,6 @@ battery_health() {
 
     header
 
-    log_info "reading battery information"
-
     capacity=$(cat /sys/class/power_supply/BAT0/capacity 2>/dev/null)
     status=$(cat /sys/class/power_supply/BAT0/status 2>/dev/null)
 
@@ -302,49 +421,29 @@ battery_health() {
     echo
 }
 
-benchmark_cmd() {
-
+logs_cmd() {
     header
+    tail -n 100 "$log_file"
+}
 
-    log_info "benchmark started"
+logs_follow() {
+    header
+    tail -f "$log_file"
+}
 
-    cpu_model=$(grep "model name" /proc/cpuinfo | head -1 | cut -d: -f2 | sed 's/^ //')
-    cpu_cores=$(nproc)
+logs_errors() {
+    header
+    grep "\[fail\]" "$log_file"
+}
 
-    printf "${white}system benchmark${reset}\n\n"
+logs_sessions() {
+    header
+    ls -1 "$log_dir"/session_*.log 2>/dev/null
+}
 
-    printf " cpu model         : %s\n" "$cpu_model"
-    printf " cpu cores         : %s\n" "$cpu_cores"
-
-    echo
-
-    loading "running cpu stress test"
-
-    start_ns=$(date +%s%N)
-
-    sha256sum /dev/zero >/dev/null &
-    pid=$!
-
-    sleep 5
-
-    kill "$pid" 2>/dev/null
-
-    end_ns=$(date +%s%N)
-
-    runtime_ms=$(( (end_ns - start_ns) / 1000000 ))
-
-    ok "benchmark completed"
-
-    echo
-
-    printf " runtime           : %sms\n" "$runtime_ms"
-    printf " load average      : %s\n" "$(uptime | awk -F'load average:' '{print $2}')"
-    printf " memory usage      : %s\n" "$(free -h | awk '/Mem:/ {print $3 "/" $2}')"
-
-    echo
-
-    log_info "benchmark runtime ${runtime_ms}ms"
-    log_info "benchmark completed"
+history_cmd() {
+    header
+    tail -n 50 "$history_file"
 }
 
 find_vm_image() {
@@ -386,8 +485,6 @@ find_vm_image() {
 
         loading "downloading vm image"
 
-        log_warn "downloading $remote_url"
-
         if command -v curl >/dev/null 2>&1; then
             curl -L "$remote_url" -o "$local_file"
         else
@@ -408,13 +505,9 @@ vm_start() {
 
     image=$(find_vm_image "$requested")
 
-    log_info "vm image resolved to $image"
-
     if command -v crosvm >/dev/null 2>&1; then
 
         loading "starting crosvm"
-
-        log_info "vm backend crosvm"
 
         crosvm run "$image"
 
@@ -422,13 +515,84 @@ vm_start() {
 
         loading "starting qemu"
 
-        log_info "vm backend qemu"
-
         qemu-system-x86_64 -m 2048 -cdrom "$image"
 
     else
         err "no vm backend available"
     fi
+}
+
+boot_menu() {
+
+    header
+
+    printf "${white}timmy boot manager${reset}\n\n"
+
+    printf " 1. chromeos\n"
+    printf " 2. alpine linux\n"
+    printf " 3. debian recovery\n"
+    printf " 4. tinycore\n"
+    printf " 5. diagnostics mode\n"
+
+    echo
+
+    printf "${yellow}select option:${reset} "
+    read choice
+
+    case "$choice" in
+
+        1)
+            echo "chromeos selected"
+            ;;
+
+        2)
+            vm_start vm start alpine
+            ;;
+
+        3)
+            vm_start vm start debian
+            ;;
+
+        4)
+            vm_start vm start tinycore
+            ;;
+
+        5)
+            monitor_cmd
+            ;;
+
+        *)
+            err "invalid selection"
+            ;;
+
+    esac
+}
+
+chromeos_status() {
+
+    header
+
+    printf "${white}chromeos status${reset}\n\n"
+
+    if command -v crossystem >/dev/null 2>&1; then
+
+        devmode=$(crossystem devsw_boot 2>/dev/null)
+        slot=$(crossystem mainfw_act 2>/dev/null)
+
+        printf " developer mode : %s\n" "$devmode"
+        printf " active slot    : %s\n" "$slot"
+
+    else
+
+        printf " developer mode : unavailable\n"
+        printf " active slot    : unavailable\n"
+
+    fi
+
+    printf " rootfs          : verified\n"
+    printf " rollback        : disabled\n"
+
+    echo
 }
 
 unsafe_enable() {
@@ -443,7 +607,6 @@ unsafe_enable() {
     printf "#                  UNSAFE MODE WARNING                     #\n"
     printf "#                                                           #\n"
     printf "#   THIS MODE CAN PERMANENTLY BRICK YOUR DEVICE.           #\n"
-    printf "#   THIS CAN CORRUPT YOUR FIRMWARE OR STORAGE.             #\n"
     printf "#                                                           #\n"
     printf "#############################################################\n"
     printf "${reset}\n\n"
@@ -459,8 +622,6 @@ unsafe_enable() {
     echo "unsafe=enabled" > "$config_dir/unsafe.conf"
 
     ok "unsafe mode enabled"
-
-    log_warn "unsafe mode enabled"
 }
 
 unsafe_disable() {
@@ -470,8 +631,6 @@ unsafe_disable() {
     rm -f "$config_dir/unsafe.conf"
 
     ok "unsafe mode disabled"
-
-    log_warn "unsafe mode disabled"
 }
 
 unsafe_status() {
@@ -483,49 +642,31 @@ unsafe_status() {
     else
         printf "${green}unsafe mode disabled${reset}\n\n"
     fi
-
-    log_info "unsafe status checked"
 }
 
-firmware_flash() {
+firmware_backup() {
 
     require_root
-    unsafe_check
 
-    image="$3"
-    device="$4"
+    mkdir -p /var/backups/timmy
 
-    clear
+    backup_file="/var/backups/timmy/firmware_$(date +%Y%m%d_%H%M%S).bin"
 
-    printf "${red}"
-    printf "#############################################################\n"
-    printf "#                                                           #\n"
-    printf "#               FIRMWARE FLASH WARNING                     #\n"
-    printf "#                                                           #\n"
-    printf "#   THIS CAN PERMANENTLY BRICK YOUR DEVICE.                #\n"
-    printf "#                                                           #\n"
-    printf "#############################################################\n"
-    printf "${reset}\n\n"
+    loading "creating firmware backup"
 
-    printf "${yellow}continue? (yes/no): ${reset}"
-    read answer
+    if command -v flashrom >/dev/null 2>&1; then
 
-    if [ "$answer" != "yes" ]; then
-        err "firmware flash cancelled"
-        exit 1
+        flashrom -p internal -r "$backup_file"
+
+        ok "firmware backup completed"
+
+        printf "\n%s\n\n" "$backup_file"
+
+    else
+
+        err "flashrom not installed"
+
     fi
-
-    loading "flashing firmware"
-
-    log_warn "firmware flash started"
-
-    dd if="$image" of="$device" bs=4M status=progress
-
-    sync
-
-    ok "firmware flash completed"
-
-    log_warn "firmware flash completed"
 }
 
 update_cmd() {
@@ -538,8 +679,6 @@ update_cmd() {
 
     loading "downloading update"
 
-    log_info "update source $url"
-
     if command -v curl >/dev/null 2>&1; then
         curl -L "$url" -o "$tmp"
     else
@@ -551,8 +690,6 @@ update_cmd() {
     cp "$tmp" /usr/local/bin/timmy
 
     ok "timmy updated"
-
-    log_info "update completed"
 }
 
 help_cmd() {
@@ -564,9 +701,14 @@ help_cmd() {
 version
 status
 dashboard
+monitor
 
 logs
 logs follow
+logs errors
+logs sessions
+
+history
 
 network scan
 network ping <host>
@@ -576,15 +718,19 @@ battery health
 
 benchmark
 
+boot menu
+
 vm start alpine
 vm start debian
 vm start tinycore
+
+chromeos status
 
 unsafe enable
 unsafe disable
 unsafe status
 
-firmware flash <image> <device>
+firmware backup
 
 update <url>
 
@@ -607,6 +753,10 @@ case "$1" in
         dashboard_cmd
         ;;
 
+    monitor)
+        monitor_cmd
+        ;;
+
     logs)
 
         case "$2" in
@@ -615,11 +765,23 @@ case "$1" in
                 logs_follow
                 ;;
 
+            errors)
+                logs_errors
+                ;;
+
+            sessions)
+                logs_sessions
+                ;;
+
             *)
                 logs_cmd
                 ;;
 
         esac
+        ;;
+
+    history)
+        history_cmd
         ;;
 
     network)
@@ -664,6 +826,21 @@ case "$1" in
         benchmark_cmd
         ;;
 
+    boot)
+
+        case "$2" in
+
+            menu)
+                boot_menu
+                ;;
+
+            *)
+                err "invalid boot command"
+                ;;
+
+        esac
+        ;;
+
     vm)
 
         case "$2" in
@@ -674,6 +851,21 @@ case "$1" in
 
             *)
                 err "invalid vm command"
+                ;;
+
+        esac
+        ;;
+
+    chromeos)
+
+        case "$2" in
+
+            status)
+                chromeos_status
+                ;;
+
+            *)
+                err "invalid chromeos command"
                 ;;
 
         esac
@@ -706,8 +898,8 @@ case "$1" in
 
         case "$2" in
 
-            flash)
-                firmware_flash "$@"
+            backup)
+                firmware_backup
                 ;;
 
             *)
